@@ -18,13 +18,19 @@ Token merging via [bipartite soft matching](https://arxiv.org/abs/2210.09461). L
 python train.py --model merge --dataset nt:enhancers --merge_r 4
 ```
 
+Or set `"model": "merge"` in `config.json` and run `./run.sh`.
+
 ### 2. Conv (U-Net)
 
 Strided convolutions replace token merging via ToME. This creates a "learnable" compression instead of similarity-based matching. Contains dilated convolutions for upsampling and skip connections. Uses the U-Net and diffusion code from https://github.com/lucidrains/denoising-diffusion-pytorch.
 
+![ConvDNA Architecture](outputs/images/conv_dna_architecture.png)
+
 ```bash
 python train.py --model conv --dataset nt:enhancers
 ```
+
+Or set `"model": "conv"` in `config.json` and run `./run.sh`.
 
 ### 3. Diffusion (DDPM + Conv U-Net)
 
@@ -33,6 +39,8 @@ The same Conv U-Net but trained with DDPM denoising. Embeds discrete tokens to c
 ```bash
 python train_diffusion.py --dataset nt:enhancers --diffusion_steps 1000 --schedule cosine
 ```
+
+Diffusion uses its own training script (`train_diffusion.py`); set dataset/model params in `config.json` and run directly.
 
 ## Pre-train + Classification Pipeline
 
