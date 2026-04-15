@@ -94,5 +94,57 @@ def load_dataset_by_name(name, data_dir="data", max_len=256):
         return load_hf_dataset(
             "InstaDeepAI/genomic_benchmarks", task, max_len
         )
+    elif name == "multispecies":
+        return load_multispecies(max_len, data_dir)
     else:
-        raise ValueError(f"Unknown dataset: {name}. Use 'synthetic', 'nt:<task>', or 'genomic:<task>'")
+        raise ValueError(f"Unknown dataset: {name}. Use 'synthetic', 'nt:<task>', 'genomic:<task>', or 'multispecies'")
+
+
+def load_multispecies(max_len=256, data_dir="data", num_train=50000, num_test=5000):
+    """
+    Load Multi-Species Genomes for pre-training (streaming).
+    Caches a subset to disk for repeated use.
+    """
+    import os
+
+    cache_train = os.path.join(data_dir, f"multispecies_train_{num_train}.pt")
+    cache_test = os.path.join(data_dir, f"multispecies_test_{num_test}.pt")
+
+    if os.path.exists(cache_train) and os.path.exists(cache_test):
+        print(f"Loading cached multispecies data from {data_dir}")
+        train_seqs = torch.load(cache_train)
+        test_seqs = torch.load(cache_test)
+        return DNADataset(train_seqs), DNADataset(test_seqs)
+
+    from datasets import load_dataset
+    print(f"Streaming multispecies genomes (train={num_train}, test={num_test})...")
+    print("NOTE: Requires 'pip install datasets==2.21.0 biopython' for this dataset.")
+
+    ds = load_dataset(
+        "InstaDeepAI/multi_species_genomes",
+        "6kbp",
+        streaming=True,
+        split="train",
+        trust_remote_code=True,
+    )
+
+    all_seqs = []
+    total_needed = num_train + num_test
+    for i, example in enumerate(ds):
+        if i >= total_needed:
+            break
+        seq = encode_sequence(example["sequence"], max_len)
+        all_seqs.append(seq)
+        if (i + 1) % 10000 == 0:
+            print(f"  Loaded {i + 1}/{total_needed} sequences...")
+
+    all_seqs = torch.stack(all_seqs)
+    train_seqs = all_seqs[:num_train]
+    test_seqs = all_seqs[num_train:num_train + num_test]
+
+    os.makedirs(data_dir, exist_ok=True)
+    torch.save(train_seqs, cache_train)
+    torch.save(test_seqs, cache_test)
+    print(f"Cached to {cache_train}, {cache_test}")
+
+    return DNADataset(train_seqs), DNADataset(test_seqs)
