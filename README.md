@@ -12,7 +12,7 @@ pip install torch local-attention tqdm numpy scikit-learn matplotlib 'datasets==
 
 ### 1. Merge (ToMe)
 
-Token merging via [bipartite soft matching](https://arxiv.org/abs/2210.09461). Local attention encoder merges r tokens per block using cosine similarity on keys. Source matrix S tracks merges for unmerging in decoder.
+Token merging via [bipartite soft matching](https://arxiv.org/abs/2210.09461). Local attention encoder merges r tokens per block using cosine similarity on keys. Same as in paper,. a source matrix S tracks merges for unmerging in decoder.  The decoder is only used for pretraining; for the classification task the decoder is unhooked and a classifier appended. 
 
 ```bash
 python train.py --model merge --dataset nt:enhancers --merge_r 4
@@ -20,7 +20,7 @@ python train.py --model merge --dataset nt:enhancers --merge_r 4
 
 ### 2. Conv (U-Net)
 
-Strided convolutions replace token merging. Learnable compression instead of similarity-based matching. Dilated convolutions for upsampling. U-Net skip connections.
+Strided convolutions replace token merging via ToME. This creates a "learnable" compression instead of similarity-based matching. Contains dilated convolutions for upsampling and skip connections. Uses the U-Net and diffusion code from https://github.com/lucidrains/denoising-diffusion-pytorch.
 
 ```bash
 python train.py --model conv --dataset nt:enhancers
@@ -28,7 +28,7 @@ python train.py --model conv --dataset nt:enhancers
 
 ### 3. Diffusion (DDPM + Conv U-Net)
 
-Same Conv U-Net but trained with DDPM denoising. Embeds discrete tokens to continuous space, adds Gaussian noise at timestep t, predicts noise. Cosine or linear schedule.
+The same Conv U-Net but trained with DDPM denoising. Embeds discrete tokens to continuous space, adds Gaussian noise at timestep t, and predicts noise. Can use cosine or linear schedule.
 
 ```bash
 python train_diffusion.py --dataset nt:enhancers --diffusion_steps 1000 --schedule cosine
@@ -59,7 +59,7 @@ Run all three variants automatically:
 
 ## Encoding
 
-Nucleotides (A/T/C/G) are discrete categories with no ordinal relationship. Embedding + cross-entropy loss, not integer MSE.
+Nucleotides (A/T/C/G) are discrete categories with no ordinal relationship. Thus, uses embedding + cross-entropy loss, not integer MSE.
 
 ## Datasets
 
@@ -74,7 +74,7 @@ Generate synthetic: `python generate_data.py --train_seqs 1000 --seq_len 256`
 
 ## Config
 
-All params in `config.json`, CLI overrides: `./run.sh --model conv --dim 128`
+All params are located in `config.json`, CLI overrides: `./run.sh --model conv --dim 128`. Make adjustments there and then use the ./run.sh script. 
 
 ## Results
 
