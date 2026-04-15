@@ -1,6 +1,6 @@
 # MergeDNA+
 
-Implementation of [MergeDNA](https://arxiv.org/abs/2511.14806) with additional compression variants. Hierarchical autoencoder for genomic DNA.
+Implementation of [MergeDNA](https://arxiv.org/abs/2511.14806) with additional compression variants. There are three variants: (1) The original version based on Token Merging (see below), and traditional and local attention transformer layers, (2) A U-Net convolutional attentional network used as the backbone of diffusion but without the diffusion training process, (3) the U-Net combined with denoising diffusion learning.
 
 ## Install
 
