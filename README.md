@@ -24,7 +24,48 @@ Or set `"model": "merge"` in `config.json` and run `./run.sh`.
 
 Strided convolutions replace token merging via ToME. This creates a "learnable" compression instead of similarity-based matching. Contains dilated convolutions for upsampling and skip connections. Uses the U-Net and diffusion code from https://github.com/lucidrains/denoising-diffusion-pytorch.
 
-![ConvDNA Architecture](outputs/images/conv_dna_architecture.png)
+```mermaid
+graph TD
+    subgraph ENCODER
+        A["DNA Input [B, N]"] --> B["Embedding [B, N, D]"]
+        B --> C["Local Attn"]
+        C --> D["Strided Conv — N → N/2"]
+        D --> E["Local Attn"]
+        E --> F["Strided Conv — N/2 → N/4"]
+    end
+
+    subgraph BOTTLENECK
+        F --> G["Full Self-Attention × L — [B, N/4, D]"]
+    end
+
+    subgraph DECODER
+        G --> H["Dilated Conv — N/4 → N/2"]
+        H --> I["Concat + Proj"]
+        I --> J["Local Attn"]
+        J --> K["Dilated Conv — N/2 → N"]
+        K --> L["Concat + Proj"]
+        L --> M["Local Attn"]
+        M --> N["Head → [B, N, 4]"]
+    end
+
+    C -. "skip" .-> L
+    E -. "skip" .-> I
+
+    style A fill:#4ECDC4,stroke:#333
+    style B fill:#4ECDC4,stroke:#333
+    style C fill:#45B7D1,stroke:#333
+    style D fill:#F7DC6F,stroke:#333
+    style E fill:#45B7D1,stroke:#333
+    style F fill:#F7DC6F,stroke:#333
+    style G fill:#E74C3C,stroke:#333,color:#fff
+    style H fill:#F39C12,stroke:#333
+    style I fill:#D5D8DC,stroke:#333
+    style J fill:#45B7D1,stroke:#333
+    style K fill:#F39C12,stroke:#333
+    style L fill:#D5D8DC,stroke:#333
+    style M fill:#45B7D1,stroke:#333
+    style N fill:#2ECC71,stroke:#333
+```
 
 ```bash
 python train.py --model conv --dataset nt:enhancers
