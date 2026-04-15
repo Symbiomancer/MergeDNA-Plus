@@ -80,7 +80,7 @@ All params are located in `config.json`, CLI overrides: `./run.sh --model conv -
 
 ![PCA 3D — ToMe Merge on nt:enhancers](outputs/images/merge_nt_enhancers_pca3d.png)
 
-Output of running the ToMe merge method on the nt:enhancers dataset (i.e., pretrained on this set), we can see the network clusters the classes without labels fairly well. Important to note this is Linear PCA as well.
+Output of running PCA on the latents produced by the ToMe merge method on the nt:enhancers dataset (i.e., pretrained on this set). We can see the network clusters the classes without labels fairly well. Important to note this is Linear PCA as well.
 
 ## Adaptive Pre-training (Section 3.4)
 
