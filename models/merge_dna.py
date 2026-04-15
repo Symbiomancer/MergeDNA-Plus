@@ -166,16 +166,17 @@ class LocalEncoderBlock(nn.Module):
         self.attn_block = LocalAttentionBlock(dim, num_heads, dim_feedforward, window_size, drop)
         self.r = r
 
-    def forward(self, x, S):
+    def forward(self, x, S, r_override=None):
         x = self.attn_block(x)
 
+        r = r_override if r_override is not None else self.r
         keys = self.attn_block.get_keys(x)
-        merge, src_idx, dst_idx, unm_idx = bipartite_soft_matching(keys, self.r)
+        merge, src_idx, dst_idx, unm_idx = bipartite_soft_matching(keys, r)
         x = merge(x)
 
         if src_idx is not None:
             num_a = keys.shape[1] // 2 + keys.shape[1] % 2
-            S = update_source_matrix(S, src_idx, dst_idx, unm_idx, self.r, num_a)
+            S = update_source_matrix(S, src_idx, dst_idx, unm_idx, r, num_a)
 
         return x, S
 
@@ -274,19 +275,64 @@ class MergeDNA(nn.Module):
         self.norm_out = nn.LayerNorm(dim)
         self.head = nn.Linear(dim, vocab_size)
 
-    def encode_local(self, x):
+    def _sample_compression_r(self, N):
+        """
+        Compression ratio sampling (Section 3.3).
+        Sample target length L ~ Gaussian(N/2, ...) clipped to [0.4N, 0.6N].
+        Returns per-layer r values.
+        """
+        target_L = int(torch.normal(
+            mean=torch.tensor(N / 2.0),
+            std=torch.tensor(N / 20.0),
+        ).clamp(int(0.4 * N), int(0.6 * N)).item())
+        total_to_remove = N - target_L
+        num_layers = len(self.local_encoder)
+        r_per_layer = total_to_remove // num_layers
+        return [r_per_layer] * num_layers
+
+    def encode_local(self, x, sample_compression=False):
         """Local Encoder with token merging. Returns compressed tokens + source matrix."""
         B, N, _ = x.shape
         S = torch.eye(N, device=x.device).unsqueeze(0).expand(B, -1, -1)
 
-        for blk in self.local_encoder:
-            x, S = blk(x, S)
+        if sample_compression and self.training:
+            r_values = self._sample_compression_r(N)
+        else:
+            r_values = [None] * len(self.local_encoder)
+
+        for blk, r_val in zip(self.local_encoder, r_values):
+            x, S = blk(x, S, r_override=r_val)
         return x, S
 
     def encode_latent(self, x):
         for blk in self.latent_encoder:
             x = blk(x)
         return x
+
+    def encode_latent_with_tome(self, x, S_local, r_global):
+        """
+        Latent Encoder with global ToMe (Section 3.4).
+        Runs full latent encoder, then merges r_global tokens globally.
+        Returns compressed tokens Z'_K, updated source matrix S'.
+        """
+        for blk in self.latent_encoder:
+            x = blk(x)
+
+        # Global ToMe on latent representations
+        B, L, C = x.shape
+        # Use the latent features themselves as keys for global matching
+        keys = x / x.norm(dim=-1, keepdim=True)
+        merge, src_idx, dst_idx, unm_idx = bipartite_soft_matching(keys, r_global)
+        x = merge(x)
+
+        if src_idx is not None:
+            num_a = L // 2 + L % 2
+            S_latent = torch.eye(L, device=x.device).unsqueeze(0).expand(B, -1, -1)
+            S_latent = update_source_matrix(S_latent, src_idx, dst_idx, unm_idx, r_global, num_a)
+        else:
+            S_latent = torch.eye(L, device=x.device).unsqueeze(0).expand(B, -1, -1)
+
+        return x, S_latent
 
     def decode_latent(self, x):
         for blk in self.latent_decoder:
@@ -298,21 +344,22 @@ class MergeDNA(nn.Module):
             x = blk(x)
         return x
 
-    def forward(self, x):
+    def forward(self, x, sample_compression=False):
         """
+        Full autoencoder forward pass (L_MTR path).
+
         Args:
             x: Input token IDs [B, N] with values in {0,1,2,3}.
+            sample_compression: If True, sample compression ratio per forward pass.
         Returns:
             logits: [B, N, vocab_size] reconstruction logits.
         """
         x = self.embed(x)
         x = self.pos_drop(x)
 
-        # Encode: compress with token merging
-        x, S = self.encode_local(x)
+        x, S = self.encode_local(x, sample_compression=sample_compression)
         x = self.encode_latent(x)
 
-        # Decode: decompress with unmerging
         x = self.decode_latent(x)
         x = unmerge(x, S)
         x = self.decode_local(x)

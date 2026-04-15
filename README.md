@@ -5,7 +5,7 @@ Implementation of [MergeDNA](https://arxiv.org/abs/2511.14806) with additional c
 ## Install
 
 ```bash
-pip install torch local-attention tqdm numpy scikit-learn matplotlib datasets
+pip install torch local-attention tqdm numpy scikit-learn matplotlib 'datasets==2.21.0' biopython
 ```
 
 ## Models
@@ -34,6 +34,29 @@ Same Conv U-Net but trained with DDPM denoising. Embeds discrete tokens to conti
 python train_diffusion.py --dataset nt:enhancers --diffusion_steps 1000 --schedule cosine
 ```
 
+## Pre-train + Classification Pipeline
+
+Following the MergeDNA paper: pre-train the autoencoder on [Multi-Species Genomes](https://huggingface.co/datasets/InstaDeepAI/multi_species_genomes), freeze the encoder, then fine-tune a classification head on a downstream task.
+
+```bash
+# Step 1: Pre-train on multi-species genomes
+python train.py --model merge --dataset multispecies --epochs 20
+
+# Step 2: Fine-tune classifier (encoder frozen, only head trains)
+python train_classifier.py \
+  --checkpoint checkpoint_merge.pt \
+  --encoder merge \
+  --dataset nt:enhancers \
+  --num_classes 2 \
+  --epochs 10
+```
+
+Run all three variants automatically:
+
+```bash
+./run_experiment.sh
+```
+
 ## Encoding
 
 Nucleotides (A/T/C/G) are discrete categories with no ordinal relationship. Embedding + cross-entropy loss, not integer MSE.
@@ -41,9 +64,10 @@ Nucleotides (A/T/C/G) are discrete categories with no ordinal relationship. Embe
 ## Datasets
 
 ```json
-"dataset": "synthetic"                  // sine/cosine waves discretized to 4 bins
-"dataset": "nt:enhancers"               // Nucleotide Transformer benchmark (18 tasks)
-"dataset": "genomic:human_enhancers_cohn"  // Genomic Benchmarks (8 tasks)
+"dataset": "synthetic"                     // sine/cosine waves discretized to 4 bins
+"dataset": "multispecies"                  // Multi-Species Genomes (pre-training)
+"dataset": "nt:enhancers"                 // Nucleotide Transformer benchmark (18 tasks)
+"dataset": "genomic:human_enhancers_cohn" // Genomic Benchmarks (8 tasks)
 ```
 
 Generate synthetic: `python generate_data.py --train_seqs 1000 --seq_len 256`
@@ -58,8 +82,17 @@ All params in `config.json`, CLI overrides: `./run.sh --model conv --dim 128`
 
 Output of running the ToMe merge method on the nt:enhancers dataset (i.e., pretrained on this set), we can see the network clusters the classes without labels fairly well. Important to note this is Linear PCA as well.
 
-## TODO
+## Adaptive Pre-training (Section 3.4)
 
-- Adaptive pre-training objectives (L_MTR, L_AMTM)
-- Compression ratio sampling
-- Classification fine-tuning head
+Full MergeDNA pre-training with all three losses and compression ratio sampling:
+
+```bash
+python train_adaptive.py --dataset multispecies --merge_r 4 --latent_merge_r 8 --amtm_k 32
+```
+
+**Compression ratio sampling** (Section 3.3): each forward pass samples target length L ~ Gaussian(N/2) clipped to [0.4N, 0.6N], preventing overfitting to a fixed compression rate.
+
+Three forward passes per iteration:
+1. **L_MTR** — full autoencoder reconstruction, compression ratio sampled from Gaussian
+2. **L_latent_MTR** (x0.25) — global ToMe in latent encoder, local encoder frozen
+3. **L_AMTM** — importance-weighted masking, loss only on high-information tokens
