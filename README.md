@@ -1,44 +1,65 @@
 # MergeDNA+
 
-Implementation of [MergeDNA](https://arxiv.org/abs/2511.14806) — hierarchical autoencoder for genomic DNA with learnable tokenization via token merging.
+Implementation of [MergeDNA](https://arxiv.org/abs/2511.14806) with additional compression variants. Hierarchical autoencoder for genomic DNA.
 
 ## Install
 
 ```bash
-pip install torch torchvision local-attention tqdm numpy
+pip install torch local-attention tqdm numpy scikit-learn matplotlib datasets
 ```
 
-## Architecture
+## Models
 
-`models/merge_dna.py` — four-stage autoencoder:
+### 1. Merge (ToMe)
 
-1. **Local Encoder** — local-window attention ([lucidrains/local-attention](https://github.com/lucidrains/local-attention)), compresses tokens
-2. **Latent Encoder** — full self-attention for long-range context
-3. **Latent Decoder** — mirrors latent encoder
-4. **Local Decoder** — mirrors local encoder, reconstructs base-level output
+Token merging via [bipartite soft matching](https://arxiv.org/abs/2210.09461). Local attention encoder merges r tokens per block using cosine similarity on keys. Source matrix S tracks merges for unmerging in decoder.
 
-Local and latent stages share parameter configs (`local_*` and `latent_*` args) between their encoder/decoder pairs.
+```bash
+python train.py --model merge --dataset nt:enhancers --merge_r 4
+```
+
+### 2. Conv (U-Net)
+
+Strided convolutions replace token merging. Learnable compression instead of similarity-based matching. Dilated convolutions for upsampling. U-Net skip connections.
+
+```bash
+python train.py --model conv --dataset nt:enhancers
+```
+
+### 3. Diffusion (DDPM + Conv U-Net)
+
+Same Conv U-Net but trained with DDPM denoising. Embeds discrete tokens to continuous space, adds Gaussian noise at timestep t, predicts noise. Cosine or linear schedule.
+
+```bash
+python train_diffusion.py --dataset nt:enhancers --diffusion_steps 1000 --schedule cosine
+```
 
 ## Encoding
 
-Nucleotides are discrete categories with no ordinal relationship. Using integer labels with MSE would imply A(0) is "closer" to T(1) than G(3). Instead, we use embedding + cross-entropy loss, which treats all four bases as equally distinct.
+Nucleotides (A/T/C/G) are discrete categories with no ordinal relationship. Embedding + cross-entropy loss, not integer MSE.
 
-## Synthetic Data
+## Datasets
 
-`generate_data.py` creates structured test sequences by summing random sine/cosine waves and discretizing into 4 bins via quartiles. This gives learnable local patterns, unlike random sequences which cap at 25% accuracy.
-
-```bash
-python generate_data.py --train_seqs 1000 --test_seqs 200 --seq_len 256
+```json
+"dataset": "synthetic"                  // sine/cosine waves discretized to 4 bins
+"dataset": "nt:enhancers"               // Nucleotide Transformer benchmark (18 tasks)
+"dataset": "genomic:human_enhancers_cohn"  // Genomic Benchmarks (8 tasks)
 ```
 
-## Train
+Generate synthetic: `python generate_data.py --train_seqs 1000 --seq_len 256`
 
-```bash
-python train.py --dim 64 --local_depth 2 --latent_depth 4 --epochs 20
-```
+## Config
+
+All params in `config.json`, CLI overrides: `./run.sh --model conv --dim 128`
+
+## Results
+
+![PCA 3D — ToMe Merge on nt:enhancers](outputs/images/merge_nt_enhancers_pca3d.png)
+
+Output of running the ToMe merge method on the nt:enhancers dataset (i.e., pretrained on this set), we can see the network clusters the classes without labels fairly well. Important to note this is Linear PCA as well.
 
 ## TODO
 
-- Token merging (ToMe) integration with source matrix tracking
 - Adaptive pre-training objectives (L_MTR, L_AMTM)
 - Compression ratio sampling
+- Classification fine-tuning head
