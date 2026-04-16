@@ -8,6 +8,8 @@ Usage:
 """
 
 import argparse
+import json
+import os
 import time
 import torch
 import torch.nn as nn
@@ -107,6 +109,7 @@ def main():
 
     total_train_time = 0.0
     best_test_acc = 0.0
+    history = []
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -153,6 +156,14 @@ def main():
               f"Test Acc: {test_acc:.2f}% | "
               f"Epoch Time: {epoch_time:.2f}s")
 
+        history.append({
+            "epoch": epoch,
+            "train_loss": round(train_loss / total_samples, 6),
+            "train_acc": round(train_acc, 2),
+            "test_acc": round(test_acc, 2),
+            "epoch_time": round(epoch_time, 2),
+        })
+
     print(f"\nBest Test Acc: {best_test_acc:.2f}%")
     print(f"Total train time: {total_train_time:.2f}s | Avg epoch: {total_train_time/args.epochs:.2f}s")
 
@@ -160,6 +171,25 @@ def main():
     ckpt_path = f"checkpoint_classifier_{args.encoder}.pt"
     torch.save(model.head.state_dict(), ckpt_path)
     print(f"Saved classifier head: {ckpt_path}")
+
+    # Save results
+    os.makedirs("outputs/results", exist_ok=True)
+    dataset_tag = args.dataset.replace(":", "_")
+    results = {
+        "encoder": args.encoder,
+        "dataset": args.dataset,
+        "num_classes": args.num_classes,
+        "config": {k: v for k, v in vars(args).items() if k not in ("device", "checkpoint")},
+        "trainable_params": trainable,
+        "total_params": total,
+        "best_test_acc": round(best_test_acc, 2),
+        "total_train_time": round(total_train_time, 2),
+        "history": history,
+    }
+    results_path = f"outputs/results/{args.encoder}_{dataset_tag}_classifier.json"
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Saved results: {results_path}")
 
     # Analysis
     dataset_tag = args.dataset.replace(":", "_")

@@ -5,7 +5,9 @@ add noise, predict noise with the U-Net.
 """
 
 import argparse
+import json
 import math
+import os
 import time
 import torch
 import torch.nn as nn
@@ -122,6 +124,7 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
     total_train_time = 0.0
+    history = []
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -180,14 +183,36 @@ def main():
               f"Test Loss: {test_loss/test_total:.6f} | "
               f"Epoch Time: {epoch_time:.2f}s")
 
+        history.append({
+            "epoch": epoch,
+            "train_loss": round(train_loss / total, 6),
+            "test_loss": round(test_loss / test_total, 6),
+            "epoch_time": round(epoch_time, 2),
+        })
+
     # Save checkpoint
     ckpt_path = "checkpoint_diffusion.pt"
     torch.save(model.state_dict(), ckpt_path)
     print(f"\nSaved checkpoint: {ckpt_path}")
     print(f"Total train time: {total_train_time:.2f}s | Avg epoch: {total_train_time/args.epochs:.2f}s")
 
-    # Post-training analysis (use encoder path for latents)
+    # Save results
+    os.makedirs("outputs/results", exist_ok=True)
     dataset_tag = args.dataset.replace(":", "_")
+    results = {
+        "model": "diffusion",
+        "dataset": args.dataset,
+        "config": {k: v for k, v in vars(args).items() if k != "device"},
+        "num_params": num_params,
+        "total_train_time": round(total_train_time, 2),
+        "history": history,
+    }
+    results_path = f"outputs/results/diffusion_{dataset_tag}_pretrain.json"
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Saved results: {results_path}")
+
+    # Post-training analysis (use encoder path for latents)
     train_params = {
         "model": "diffusion",
         "dim": args.dim,

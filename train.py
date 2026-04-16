@@ -1,6 +1,8 @@
 """Train MergeDNA autoencoder on DNA sequences."""
 
 import argparse
+import json
+import os
 import time
 import torch
 import torch.nn as nn
@@ -78,6 +80,7 @@ def main():
     criterion = nn.CrossEntropyLoss()
 
     total_train_time = 0.0
+    history = []
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -97,7 +100,7 @@ def main():
             train_loss += loss.item() * batch_total
             correct += (logits.argmax(-1) == seqs).sum().item()
             total += batch_total
-            pbar.set_postfix(loss=f"{train_loss/total:.4f}", acc=f"{100.*correct/total:.1f}%")
+            pbar.set_postfix(loss=f"{train_loss/total:.4f}", recon_acc=f"{100.*correct/total:.1f}%")
 
         epoch_time = time.time() - epoch_start
         total_train_time += epoch_time
@@ -116,9 +119,17 @@ def main():
         test_acc = 100.0 * test_correct / test_total
 
         print(f"Epoch {epoch:3d}/{args.epochs} | "
-              f"Train Loss: {train_loss/total:.4f} | Train Acc: {train_acc:.2f}% | "
-              f"Test Acc: {test_acc:.2f}% | "
+              f"Train Loss: {train_loss/total:.4f} | Train Recon Acc: {train_acc:.2f}% | "
+              f"Test Recon Acc: {test_acc:.2f}% | "
               f"Epoch Time: {epoch_time:.2f}s")
+
+        history.append({
+            "epoch": epoch,
+            "train_loss": round(train_loss / total, 6),
+            "train_recon_acc": round(train_acc, 2),
+            "test_recon_acc": round(test_acc, 2),
+            "epoch_time": round(epoch_time, 2),
+        })
 
     # Save checkpoint
     ckpt_path = f"checkpoint_{args.model}.pt"
@@ -126,8 +137,23 @@ def main():
     print(f"\nSaved checkpoint: {ckpt_path}")
     print(f"Total train time: {total_train_time:.2f}s | Avg epoch: {total_train_time/args.epochs:.2f}s")
 
-    # Post-training analysis
+    # Save results
+    os.makedirs("outputs/results", exist_ok=True)
     dataset_tag = args.dataset.replace(":", "_")
+    results = {
+        "model": args.model,
+        "dataset": args.dataset,
+        "config": {k: v for k, v in vars(args).items() if k != "device"},
+        "num_params": num_params,
+        "total_train_time": round(total_train_time, 2),
+        "history": history,
+    }
+    results_path = f"outputs/results/{args.model}_{dataset_tag}_pretrain.json"
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Saved results: {results_path}")
+
+    # Post-training analysis
     train_params = {
         "model": args.model,
         "dim": args.dim,
@@ -139,7 +165,7 @@ def main():
         "epochs": args.epochs,
         "lr": args.lr,
         "params": f"{num_params:,}",
-        "test_acc": f"{test_acc:.2f}%",
+        "test_recon_acc": f"{test_acc:.2f}%",
     }
     if args.model == "merge":
         train_params["merge_r"] = args.merge_r

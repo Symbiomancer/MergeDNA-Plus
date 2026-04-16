@@ -223,7 +223,7 @@ def main():
               f"MTR: {epoch_mtr/total:.4f} | "
               f"Latent: {epoch_latent/total:.4f} | "
               f"AMTM: {epoch_amtm/total:.4f} | "
-              f"Test Acc: {test_acc:.2f}% | "
+              f"Test Recon Acc: {test_acc:.2f}% | "
               f"Time: {epoch_time:.2f}s")
 
     ckpt_path = "checkpoint_adaptive.pt"
@@ -244,7 +244,7 @@ def main():
         "amtm_k": args.amtm_k,
         "epochs": args.epochs,
         "params": f"{num_params:,}",
-        "test_acc": f"{test_acc:.2f}%",
+        "test_recon_acc": f"{test_acc:.2f}%",
     }
     run_analysis(model, test_loader, args.device,
                  model_name="adaptive", dataset_name=dataset_tag, params=train_params)
